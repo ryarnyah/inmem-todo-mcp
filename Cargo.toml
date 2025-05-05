@@ -1,0 +1,28 @@
+[package]
+name = "inmem-todo-mcp"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+rmcp = { git = "https://github.com/modelcontextprotocol/rust-sdk", branch = "main", features = [
+    "transport-io",
+    "transport-async-rw",
+] }
+tokio = { version = "1", features = [
+    "macros",
+    "rt",
+    "rt-multi-thread",
+    "io-std",
+    "signal",
+] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+anyhow = "1.0"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = [
+    "env-filter",
+    "std",
+    "fmt",
+] }
+dashmap = "6.1.0"
+uuid = { version = "1.16.0", features = ["v4"] }
