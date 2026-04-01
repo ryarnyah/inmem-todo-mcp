@@ -1,31 +1,48 @@
 use anyhow::Result;
 use dashmap::DashMap;
 use rmcp::{
-    ServerHandler, ServiceExt,
-    handler::server::wrapper::Json,
-    model::{ServerCapabilities, ServerInfo},
-    tool,
+    ErrorData as McpError, ServerHandler, ServiceExt,
+    handler::server::{tool::ToolRouter, wrapper::Parameters},
+    model::{CallToolResult, ServerCapabilities, ServerInfo},
+    schemars::JsonSchema,
+    tool, tool_handler, tool_router,
     transport::io::stdio,
 };
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
+use serde_json::json;
 use tracing_subscriber::EnvFilter;
 use uuid::Uuid;
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct Task {
+    #[schemars(description = "the task id")]
     id: String,
+    #[schemars(description = "the task name")]
     name: String,
 }
 
 #[derive(Debug, Clone)]
 pub struct TODO {
     tasks: DashMap<String, Task>,
+    tool_router: ToolRouter<Self>,
 }
 
-#[tool(tool_box)]
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
+pub struct AddTaskRequest {
+    #[schemars(description = "the task name")]
+    pub name: String,
+}
+#[derive(Debug, Clone, Deserialize, JsonSchema)]
+pub struct DeleteTaskRequest {
+    #[schemars(description = "the task id")]
+    pub id: String,
+}
+
+#[tool_router]
 impl TODO {
     fn new() -> Self {
         TODO {
+            tool_router: Self::tool_router(),
             tasks: DashMap::new(),
         }
     }
@@ -33,37 +50,30 @@ impl TODO {
     #[tool(description = "add new task")]
     async fn add(
         &self,
-        #[tool(param)]
-        #[schemars(description = "the task name")]
-        name: String,
-    ) -> Json<Task> {
-        let id = Uuid::new_v4().to_string();
+        Parameters(AddTaskRequest { name }): Parameters<AddTaskRequest>,
+    ) -> Result<CallToolResult, McpError> {
+        let id = Uuid::now_v7().to_string();
         let task = Task {
             id: id.clone(),
             name,
         };
         self.tasks.insert(id.clone(), task.clone());
-        Json(task)
+        Ok(CallToolResult::structured(json!(task)))
     }
 
     #[tool(description = "get all tasks")]
-    async fn all(&self) -> Json<Vec<Task>> {
+    async fn all(&self) -> Result<CallToolResult, McpError> {
         let tasks: Vec<Task> = self
             .tasks
             .clone()
             .into_iter()
             .map(|(_, task)| task)
             .collect();
-        Json(tasks)
+        Ok(CallToolResult::structured(json!(tasks)))
     }
 
     #[tool(description = "delete task by id")]
-    async fn delete(
-        &self,
-        #[tool(param)]
-        #[schemars(description = "the task id")]
-        id: String,
-    ) {
+    async fn delete(&self, Parameters(DeleteTaskRequest { id }): Parameters<DeleteTaskRequest>) {
         self.tasks.remove(&id);
     }
 
@@ -73,14 +83,11 @@ impl TODO {
     }
 }
 
-#[tool(tool_box)]
+#[tool_handler]
 impl ServerHandler for TODO {
     fn get_info(&self) -> ServerInfo {
-        ServerInfo {
-            instructions: Some("A simple TODO list".into()),
-            capabilities: ServerCapabilities::builder().enable_tools().build(),
-            ..Default::default()
-        }
+        ServerInfo::new(ServerCapabilities::builder().enable_tools().build())
+            .with_instructions("A simple TODO list".to_string())
     }
 }
 
